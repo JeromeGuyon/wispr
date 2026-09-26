@@ -116,3 +116,38 @@ Detailed designs live in `.kiro/specs/`:
 - 22 test files in `wisprTests/`
 - Fakes/stubs preferred over mocking frameworks
 - Tests cover: services, UI views, integration, accessibility, error recovery
+
+## Live Meeting Features (JuL + Apple Intelligence)
+
+On-device meeting intelligence layered on the existing meeting transcription.
+**Opt-in: the whole section is off by default** (`SettingsStore.liveMeetingFeaturesEnabled`).
+
+Two features share one mechanism — each finalized transcript sentence is sent,
+non-blocking, to a local JuL server for typed classification (no token
+generation):
+
+- **Awareness** ("someone is talking about you"): wakes the user (notification +
+  haptic + window flash) when a sentence names them and asks a question/task.
+  Highlights: urgency, action-needed, deadline (Noul), tone (Score, 5 levels).
+  Context brief: last N transcript lines (default) or an on-device AI summary.
+- **Bullshit bingo**: a live 4×4 grid that fills as corporate buzzwords are heard.
+
+Key types (all in `Services/`, `@MainActor`):
+
+| Type | Role |
+|------|------|
+| `JulClient` | actor, HTTP client for the local JuL server (`/v1/classify`, `/health`) |
+| `MeetingClassifier` | `@Observable`, hooked into `MeetingStateManager.record()`; classifies each sentence, drives awareness + bingo |
+| `MeetingClassifierFeatures` | `AwarenessConfig`, `BingoConfig`, `ContextSummary` — the question sets and decision logic |
+| `AwarenessSummarizer` | optional one-shot brief via `AppleIntelligence` |
+| `AppleIntelligence` | shared wrapper over `SystemLanguageModel` (also used by `TextCorrectionService`) |
+
+UI in `UI/Meeting/` (`BingoGridView`, `AwarenessHistoryView`, `FeaturePanel`)
+and `UI/Components/LiveFeatureComponents`. Settings live in `SettingsView`'s
+"Live Meeting Features" section (master toggle, install guide, context-mode
+picker, collapsed Advanced for endpoint/API key).
+
+**Privacy**: transcript text is never logged (only decision metadata). JuL runs
+on `127.0.0.1` by default; the optional summary uses Apple's on-device model.
+Nothing leaves the Mac. Requires a running JuL server (`jul serve`, see the
+in-app install guide) and, for the AI summary, Apple Intelligence.

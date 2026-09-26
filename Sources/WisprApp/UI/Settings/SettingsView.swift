@@ -102,6 +102,18 @@ struct SettingsView: View {
     @State private var hotkeyError: String?
     @State private var showRestoreDefaultsAlert = false
 
+    /// Live JuL server reachability for the Live Meeting Features badge.
+    @State private var julReachable = false
+    @State private var julModel: String?
+    @State private var julVerifying = false
+    @State private var julVerifyMessage: String?
+    /// Expansion state of the collapsible Advanced and install-guide groups.
+    @State private var showJulAdvanced = false
+    @State private var showJulInstall = false
+    /// Bumping this restarts the `.task` probe; kept constant so the probe loop
+    /// runs for the lifetime of the view.
+    @State private var julProbeTick = 0
+
     /// Surfaced when a chosen transcripts folder could not be used, so the app
     /// silently falling back to the default location is visible rather than
     /// looking like the setting was ignored.
@@ -129,6 +141,7 @@ struct SettingsView: View {
             afterTranscriptionSection
             feedbackSection
             meetingSection
+            liveFeaturesSection
             generalSection
         }
         .formStyle(.grouped)
@@ -470,6 +483,329 @@ struct SettingsView: View {
                 systemImage: SFSymbols.meeting,
                 tint: .indigo
             )
+        }
+    }
+
+    // MARK: - Live Meeting Features Section (JuL)
+
+    /// Awareness ("someone is talking about you") and bullshit bingo. Both send
+    /// each transcript sentence to a local JuL server (`jul serve`) during a
+    /// meeting; when JuL is not running they simply stay inert.
+    private var liveFeaturesSection: some View {
+        Section {
+            @Bindable var store = settingsStore
+
+            // 0. Master switch — opt-in. The whole feature set is off by default.
+            Toggle(isOn: $store.liveMeetingFeaturesEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Enable Live Meeting Features")
+                        .foregroundStyle(theme.primaryTextColor)
+                    Text("On-device meeting awareness and bingo, powered by JuL. Off by default.")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryTextColor)
+                }
+            }
+            .accessibilityHint("Master switch for the awareness and bingo features.")
+
+            if store.liveMeetingFeaturesEnabled {
+                liveFeaturesBody(store: store)
+            }
+        } header: {
+            SectionHeader(
+                title: "Live Meeting Features",
+                systemImage: "brain.head.profile",
+                tint: .purple
+            )
+        }
+        .task(id: julProbeTick) { await probeJul() }
+    }
+
+    /// The section body, shown only when the master switch is on.
+    @ViewBuilder private func liveFeaturesBody(store storeParam: SettingsStore) -> some View {
+        @Bindable var store = storeParam
+        Group {
+            // 1. Status + install guidance (for everyone).
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("Powered by JuL (on-device)", systemImage: "cpu")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(theme.primaryTextColor)
+                    Spacer()
+                    JulStatusBadge(isReachable: julReachable, modelName: julModel)
+                }
+                if !julReachable {
+                    DisclosureGroup(isExpanded: $showJulInstall) {
+                        julInstallGuide
+                    } label: {
+                        Label("How to install & run JuL", systemImage: "questionmark.circle")
+                            .font(.caption)
+                    }
+                } else {
+                    Text("Audio and text stay on this Mac. These features are inert while JuL is not running.")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryTextColor)
+                }
+            }
+            .padding(.vertical, 2)
+
+            Divider()
+
+            // 2. Awareness — toggle + names.
+            Toggle(isOn: $store.awarenessEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Wake me when I'm addressed")
+                        .foregroundStyle(theme.primaryTextColor)
+                    Text("Notification + haptic when someone addresses you a question or a task by name. Works in French and English.")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryTextColor)
+                }
+            }
+            .accessibilityHint("Wakes you when you are addressed during a meeting.")
+
+            if store.awarenessEnabled {
+                VStack(alignment: .leading, spacing: 6) {
+                    NameChipsEditor(names: $store.awarenessMonitoredNames)
+                    if store.awarenessMonitoredNames.isEmpty {
+                        Text("Add at least one name for this to do anything.")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(.leading, 4)
+
+                // 3. Context mode — how much to show on a wake.
+                if !store.awarenessMonitoredNames.isEmpty {
+                    contextModePicker(store: store)
+
+                    // Anti-spam cooldown between wakes.
+                    VStack(alignment: .leading, spacing: 2) {
+                        Stepper(value: $store.awarenessCooldownSeconds, in: 0...300, step: 15) {
+                            Text(store.awarenessCooldownSeconds == 0
+                                 ? "Wake me every time"
+                                 : "Wait \(cooldownLabel(store.awarenessCooldownSeconds)) between wakes")
+                                .font(.caption)
+                        }
+                        Text("Avoids repeated buzzes when you're addressed several times in a row.")
+                            .font(.caption2)
+                            .foregroundStyle(theme.secondaryTextColor)
+                    }
+                    .padding(.leading, 4)
+                }
+            }
+
+            Divider()
+
+            // 4. Bingo.
+            Toggle(isOn: $store.bingoEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live Bullshit Bingo")
+                        .foregroundStyle(theme.primaryTextColor)
+                    Text("A jargon grid in the menu bar that lights up as buzzwords are heard.")
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryTextColor)
+                }
+            }
+            .accessibilityHint("Fills a jargon bingo grid in the menu bar during a meeting.")
+
+            if store.bingoEnabled {
+                BingoTermsEditor(terms: $store.bingoTerms)
+                    .padding(.leading, 4)
+            }
+
+            // 5. Advanced — server config, collapsed by default.
+            DisclosureGroup(isExpanded: $showJulAdvanced) {
+                advancedServerConfig(store: store)
+            } label: {
+                Label("Advanced", systemImage: "gearshape.2")
+                    .font(.caption)
+            }
+        }
+    }
+
+    // MARK: - Live features sub-views
+
+    /// Human label for a cooldown in seconds: "45 s" or "2 min".
+    private func cooldownLabel(_ seconds: Int) -> String {
+        seconds % 60 == 0 && seconds >= 60 ? "\(seconds / 60) min" : "\(seconds) s"
+    }
+
+    /// The context mode picker: last N messages (default) vs on-device generative
+    /// summary (opt-in), with the relevant sizing control shown inline.
+    @ViewBuilder private func contextModePicker(store: SettingsStore) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("When woken, show me")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(theme.secondaryTextColor)
+
+            Picker("Context", selection: Bindable(store).awarenessSummaryMode) {
+                Text("The last messages").tag(AwarenessSummaryMode.lastMessages)
+                Text("A short AI summary").tag(AwarenessSummaryMode.generative)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch store.awarenessSummaryMode {
+            case .lastMessages:
+                Stepper(value: Bindable(store).awarenessLastMessages, in: 1...10) {
+                    Text("Show the last \(store.awarenessLastMessages) message\(store.awarenessLastMessages == 1 ? "" : "s")")
+                        .font(.caption)
+                }
+                Text("No AI, no extra processing — just the recent transcript lines.")
+                    .font(.caption2)
+                    .foregroundStyle(theme.secondaryTextColor)
+
+            case .generative:
+                if AwarenessSummarizer.isAvailable {
+                    Stepper(value: Bindable(store).awarenessSummaryMinutes, in: 1...10) {
+                        Text("Summarize the last \(store.awarenessSummaryMinutes) minute\(store.awarenessSummaryMinutes == 1 ? "" : "s")")
+                            .font(.caption)
+                    }
+                    Text("A short brief (2–3 sentences) generated on-device by Apple Intelligence, covering what you're asked and the context. Nothing leaves your Mac.")
+                        .font(.caption2)
+                        .foregroundStyle(theme.secondaryTextColor)
+                } else {
+                    Label(AwarenessSummarizer.unavailabilityReason ?? "Apple Intelligence is unavailable.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    Text("Falls back to showing the last \(store.awarenessLastMessages) messages until it's available.")
+                        .font(.caption2)
+                        .foregroundStyle(theme.secondaryTextColor)
+                }
+            }
+        }
+        .padding(.leading, 4)
+        .padding(.top, 2)
+    }
+
+    /// Advanced server configuration: endpoint URL, API key, verify. Collapsed.
+    @ViewBuilder private func advancedServerConfig(store: SettingsStore) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("JuL endpoint")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(theme.secondaryTextColor)
+            HStack(spacing: 6) {
+                TextField("http://127.0.0.1:8577", text: Bindable(store).julEndpoint)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("JuL endpoint URL")
+                Button {
+                    Task { await verifyJul() }
+                } label: {
+                    if julVerifying { ProgressView().controlSize(.small) } else { Text("Verify") }
+                }
+                .disabled(julVerifying)
+                Button("Default") {
+                    store.julEndpoint = JulClient.defaultBaseURL
+                    Task { await verifyJul() }
+                }
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "key.fill").foregroundStyle(.secondary).font(.caption)
+                SecureField("API key (optional — leave empty for local)", text: Bindable(store).julApiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("JuL API key")
+            }
+            if let julVerifyMessage {
+                Text(julVerifyMessage)
+                    .font(.caption)
+                    .foregroundStyle(julReachable ? theme.successColor : theme.secondaryTextColor)
+            }
+            Text("Change the endpoint only if JuL runs on another port or machine. A key is required when it is not on 127.0.0.1.")
+                .font(.caption2)
+                .foregroundStyle(theme.secondaryTextColor)
+        }
+        .padding(.leading, 4)
+    }
+
+    /// Step-by-step guidance to install and run JuL, for non-technical users.
+    @ViewBuilder private var julInstallGuide: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("JuL is a tiny local program that powers these features. It runs entirely on your Mac. To set it up once:")
+                .font(.caption)
+                .foregroundStyle(theme.secondaryTextColor)
+
+            installStep(1, "Open the Terminal app (in Applications ▸ Utilities).")
+            installStep(2, "Install JuL — paste this and press Return:",
+                        command: "pip3 install jul")
+            installStep(3, "Download the model and check it works (a few GB, once):",
+                        command: "jul setup")
+            installStep(4, "Start the server — leave this window open during meetings:",
+                        command: "jul serve")
+
+            Text("Once it says “listening on http://127.0.0.1:8577”, come back here — the badge above turns green.")
+                .font(.caption2)
+                .foregroundStyle(theme.secondaryTextColor)
+        }
+        .padding(.top, 4)
+    }
+
+    @ViewBuilder private func installStep(_ n: Int, _ text: String, command: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 6) {
+                Text("\(n).").font(.caption.monospacedDigit().weight(.semibold))
+                Text(text).font(.caption)
+            }
+            if let command {
+                HStack(spacing: 6) {
+                    Text(command)
+                        .font(.caption.monospaced())
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
+                        .textSelection(.enabled)
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Copy “\(command)”")
+                }
+                .padding(.leading, 16)
+            }
+        }
+    }
+
+    /// Polls the configured JuL server so the badge reflects reality. Uses the
+    /// endpoint from Settings, not a hard-coded address.
+    private func probeJul() async {
+        while !Task.isCancelled {
+            let client = JulClient(baseURL: settingsStore.julEndpoint, apiKey: settingsStore.julApiKey)
+            let model = await client.health()
+            julReachable = (model != nil)
+            julModel = model
+            try? await Task.sleep(for: .seconds(5))
+        }
+    }
+
+    /// One-shot verification triggered by the Verify button, with user feedback.
+    /// Checks reachability via /health, then validates the API key (if any) with a
+    /// tiny classify — since /health is intentionally unauthenticated.
+    private func verifyJul() async {
+        julVerifying = true
+        julVerifyMessage = nil
+        defer { julVerifying = false }
+        let client = JulClient(baseURL: settingsStore.julEndpoint, apiKey: settingsStore.julApiKey)
+        let model = await client.health()
+        julReachable = (model != nil)
+        julModel = model
+        guard model != nil else {
+            julVerifyMessage = "Could not reach the server. Is `jul serve` running at this address?"
+            return
+        }
+        // Validate the key with a minimal authenticated call.
+        do {
+            _ = try await client.classify(state: "connectivity check ok",
+                questions: ["c": JulQuestion(.noul, instructions: "Is this a test?")])
+            let m = model ?? ""
+            julVerifyMessage = m.isEmpty ? "Connected." : "Connected — model: \(m)"
+        } catch JulClientError.badStatus(401) {
+            julVerifyMessage = "Reached the server, but the API key was rejected (401)."
+        } catch JulClientError.badStatus(403) {
+            julVerifyMessage = "The server requires an API key — add it above (403)."
+        } catch {
+            julVerifyMessage = "Reached the server, but a test request failed."
         }
     }
 

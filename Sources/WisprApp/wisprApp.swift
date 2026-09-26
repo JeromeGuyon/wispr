@@ -101,6 +101,10 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// Speaker diarization engine for the meeting "Others" track.
     let meetingDiarizer = MeetingDiarizer()
 
+    /// Live-meeting classifier (JuL): drives the awareness and bingo features.
+    /// Talks to a local `jul serve` over HTTP; inert if that server is not running.
+    let meetingClassifier = MeetingClassifier()
+
     /// Browsing state for past meeting transcripts (the window's history sidebar).
     let meetingHistoryStore = MeetingHistoryStore()
 
@@ -122,6 +126,12 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// Meeting transcription floating window.
     private var meetingPanel: MeetingWindowPanel?
 
+    /// Dedicated floating window for the live bingo grid.
+    private var bingoWindowPanel: FeaturePanel?
+
+    /// Dedicated floating window for the awareness solicitation history.
+    private var awarenessHistoryPanel: FeaturePanel?
+
     /// Task observing StateManager.appState to drive overlay visibility.
     private var overlayObservationTask: Task<Void, Never>?
 
@@ -130,6 +140,12 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
     /// Task observing hotkey settings changes to re-register the global hotkey.
     private var hotkeyObservationTask: Task<Void, Never>?
+
+    /// Task keeping the live classifier in sync with bingo terms and JuL endpoint.
+    private var settingsObservationTask: Task<Void, Never>?
+    /// The JuL API key currently applied to the classifier, to avoid rebuilding
+    /// the client when nothing changed.
+    private var currentJulKey: String = ""
 
     /// Task monitoring permission changes (microphone, accessibility).
     private var permissionMonitoringTask: Task<Void, Never>?
@@ -189,12 +205,132 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
         Log.app.debug("bootstrap — StateManager initialized")
 
+        // Configure the live-meeting classifier before handing it to the meeting
+        // manager. Awareness wakes the user via the same notification service used
+        // for meeting detection; the bingo grid is read by the menu-bar UI.
+        // The whole section is opt-in: nothing runs unless the master switch is on.
+        if settingsStore.liveMeetingFeaturesEnabled {
+            if settingsStore.awarenessEnabled {
+                meetingClassifier.awareness = AwarenessConfig.from(
+                    names: settingsStore.awarenessMonitoredNames,
+                    mode: settingsStore.awarenessSummaryMode,
+                    lastMessages: settingsStore.awarenessLastMessages,
+                    summaryMinutes: settingsStore.awarenessSummaryMinutes,
+                    cooldownSeconds: settingsStore.awarenessCooldownSeconds)
+            }
+            if settingsStore.bingoEnabled {
+                meetingClassifier.bingo = BingoConfig(terms: settingsStore.bingoTerms)
+            }
+        }
+        // Keep the classifier in sync with Settings, and only ever contact the
+        // server when the feature is enabled. Driven by Observation: the loop
+        // re-arms after each change rather than polling every second, and while
+        // the master switch is off nothing is contacted at all.
+        settingsObservationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let store = self.settingsStore
+                let master = store.liveMeetingFeaturesEnabled
+
+                if master {
+                    // Point at the configured endpoint and keep the badge live.
+                    let endpoint = store.julEndpoint
+                    let key = store.julApiKey
+                    if self.meetingClassifier.endpoint != (JulClient.normalizedBase(endpoint) ?? "")
+                        || self.currentJulKey != key {
+                        self.meetingClassifier.setEndpoint(endpoint, apiKey: key)
+                        self.currentJulKey = key
+                    }
+                    self.meetingClassifier.startHealthMonitoring()
+                    // Reflect the bingo grid edits live. Only reassign when the
+                    // config actually changed: `bingo`'s didSet rebuilds (and thus
+                    // clears) the grid, so an unconditional assignment would wipe a
+                    // mid-meeting grid on any unrelated settings change (e.g. the
+                    // API key or endpoint). BingoConfig is Equatable.
+                    let newBingo = store.bingoEnabled
+                        ? BingoConfig(terms: store.bingoTerms) : nil
+                    if newBingo != self.meetingClassifier.bingo {
+                        self.meetingClassifier.bingo = newBingo
+                    }
+                } else {
+                    // Off: stop the poll, contact nothing, clear the grid, and tear
+                    // down awareness too — otherwise it stays configured and keeps
+                    // shipping sentences to JuL until the next meeting.
+                    self.meetingClassifier.stopHealthMonitoring()
+                    self.meetingClassifier.bingo = nil
+                    self.meetingClassifier.awareness = nil
+                }
+
+                // Wait until any of the relevant settings change, then re-run.
+                await withCheckedContinuation { continuation in
+                    withObservationTracking {
+                        _ = store.liveMeetingFeaturesEnabled
+                        _ = store.bingoEnabled
+                        _ = store.bingoTerms
+                        _ = store.julEndpoint
+                        _ = store.julApiKey
+                    } onChange: { continuation.resume() }
+                }
+            }
+        }
+        // Re-read the two settings at the start of each meeting, so toggling them
+        // in Settings applies to the next meeting without an app relaunch.
+        meetingClassifier.configProvider = { [weak settingsStore] in
+            guard let settingsStore, settingsStore.liveMeetingFeaturesEnabled else { return (nil, nil) }
+            let awareness = settingsStore.awarenessEnabled
+                ? AwarenessConfig.from(
+                    names: settingsStore.awarenessMonitoredNames,
+                    mode: settingsStore.awarenessSummaryMode,
+                    lastMessages: settingsStore.awarenessLastMessages,
+                    summaryMinutes: settingsStore.awarenessSummaryMinutes,
+                    cooldownSeconds: settingsStore.awarenessCooldownSeconds)
+                : nil
+            let bingo = settingsStore.bingoEnabled
+                ? BingoConfig(terms: settingsStore.bingoTerms) : nil
+            return (awareness, bingo)
+        }
+        meetingClassifier.onWake = { [weak self] solicitation in
+            guard let self else { return }
+            Task {
+                await self.meetingNotificationService.postAwarenessNotification(
+                    id: solicitation.id,
+                    sentence: solicitation.sentence, speaker: solicitation.speaker,
+                    tags: solicitation.tags, urgent: solicitation.urgent,
+                    needsAction: solicitation.needsAction, hasDeadline: solicitation.hasDeadline,
+                    tone: solicitation.tone, summary: solicitation.summary,
+                    recentMessages: solicitation.recentMessages)
+            }
+        }
+        // The generated brief lands after the immediate wake; post a short
+        // follow-up carrying it, so the first notification is never delayed.
+        meetingClassifier.onSummaryReady = { [weak self] solicitation in
+            guard let self, let brief = solicitation.summary, !brief.isEmpty else { return }
+            Task {
+                await self.meetingNotificationService.postAwarenessNotification(
+                    id: solicitation.id,
+                    sentence: solicitation.sentence, speaker: solicitation.speaker,
+                    tags: solicitation.tags, urgent: solicitation.urgent,
+                    needsAction: solicitation.needsAction, hasDeadline: solicitation.hasDeadline,
+                    tone: solicitation.tone, summary: brief)
+            }
+        }
+        // Celebrate a completed bingo line with a haptic burst.
+        meetingClassifier.onBingo = {
+            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        }
+        // Request notification permission at meeting start when awareness is on,
+        // so the first wake actually shows a banner (the app otherwise never asks).
+        meetingClassifier.onAwarenessArmed = { [weak self] in
+            await self?.meetingNotificationService.requestAuthorization()
+        }
+
         // Create meeting state manager
         let msm = MeetingStateManager(
             meetingAudioEngine: meetingAudioEngine,
             transcriptionEngine: whisperService,
             settingsStore: settingsStore,
-            meetingDiarizer: meetingDiarizer
+            meetingDiarizer: meetingDiarizer,
+            meetingClassifier: meetingClassifier
         )
         meetingStateManager = msm
 
@@ -245,8 +381,45 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             permissionManager: permissionManager,
             textCorrectionService: textCorrectionService,
             updateChecker: updateChecker,
-            meetingStateManager: msm
+            meetingStateManager: msm,
+            meetingClassifier: meetingClassifier
         )
+
+        // Dedicated floating windows for the live bingo grid and the awareness
+        // history, opened from the menu (bingo also auto-shows on a completed line).
+        let bingoPanel = FeaturePanel(
+            title: "Bullshit Bingo", autosaveName: "BingoWindow",
+            size: NSSize(width: 360, height: 460)) { [meetingClassifier] in
+                BingoGridView(classifier: meetingClassifier)
+            }
+        let historyPanel = FeaturePanel(
+            title: "You were mentioned", autosaveName: "AwarenessHistoryWindow",
+            size: NSSize(width: 460, height: 620),
+            minSize: NSSize(width: 380, height: 360)) { [meetingClassifier] in
+                AwarenessHistoryView(classifier: meetingClassifier)
+            }
+        self.bingoWindowPanel = bingoPanel
+        self.awarenessHistoryPanel = historyPanel
+        menuBarController?.onOpenBingoWindow = { [weak bingoPanel] in
+            bingoPanel?.show()
+        }
+        menuBarController?.onOpenAwarenessHistory = { [weak historyPanel] in
+            historyPanel?.show()
+        }
+        // Auto-show the grid when a bingo line completes, so the celebration is
+        // seen even if the window was closed.
+        let existingOnBingo = meetingClassifier.onBingo
+        meetingClassifier.onBingo = { [weak bingoPanel] in
+            existingOnBingo?()
+            bingoPanel?.show()
+        }
+        // Flash the awareness window when the user is addressed, on top of the
+        // notification, so the eye is drawn to it.
+        let existingOnWake = meetingClassifier.onWake
+        meetingClassifier.onWake = { [weak historyPanel] solicitation in
+            existingOnWake?(solicitation)
+            historyPanel?.flashAttention()
+        }
 
         // Create recording overlay panel
         overlayPanel = RecordingOverlayPanel(

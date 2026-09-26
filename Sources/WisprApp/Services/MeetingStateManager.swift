@@ -98,6 +98,12 @@ final class MeetingStateManager {
     /// Whether diarization is active for the current session (set at startMeeting).
     private var diarizationActive = false
 
+    /// Optional live-meeting classifier (JuL). When set, each recorded sentence
+    /// is sent to it for the awareness ("someone is talking about you") and bingo
+    /// features. `nil` disables both entirely — the default, so Wispr behaves
+    /// exactly as before when the feature is off.
+    private let meetingClassifier: MeetingClassifier?
+
     /// Guards against a second save while `stopMeeting()` is suspended.
     ///
     /// `stopMeeting()` awaits before it flips `meetingState` to `.idle`, so a quit
@@ -119,12 +125,14 @@ final class MeetingStateManager {
         meetingAudioEngine: MeetingAudioEngine,
         transcriptionEngine: any TranscriptionEngine,
         settingsStore: SettingsStore,
-        meetingDiarizer: MeetingDiarizer? = nil
+        meetingDiarizer: MeetingDiarizer? = nil,
+        meetingClassifier: MeetingClassifier? = nil
     ) {
         self.meetingAudioEngine = meetingAudioEngine
         self.transcriptionEngine = transcriptionEngine
         self.settingsStore = settingsStore
         self.meetingDiarizer = meetingDiarizer
+        self.meetingClassifier = meetingClassifier
         self.mode = settingsStore.meetingInPersonMode ? .inPerson : .online
     }
 
@@ -152,6 +160,11 @@ final class MeetingStateManager {
         transcript.mode = sessionMode
         errorMessage = nil
         diarizationActive = false
+
+        // Prepare the live classifier (if enabled): resets the bingo grid and
+        // checks the JuL server is up. Best-effort — a missing server just leaves
+        // the live features inert for this session.
+        await meetingClassifier?.meetingWillStart()
 
         do {
             let (micLevels, systemLevels) = try await meetingAudioEngine.startCapture(
@@ -451,12 +464,24 @@ final class MeetingStateManager {
     func record(_ entry: MeetingTranscriptEntry) {
         guard transcript.mode == .online, settingsStore.meetingEchoSuppressionEnabled else {
             transcript.entries.append(entry)
+            classify(entry)
             return
         }
         if !transcript.appendSuppressingEcho(entry) {
             Log.stateManager.debug(
                 "MeetingStateManager — suppressed microphone echo of remote audio")
+        } else {
+            classify(entry)
         }
+    }
+
+    /// Sends a sentence to the live classifier, if one is wired. The classifier
+    /// returns immediately and works in a detached task, so this never delays the
+    /// transcription path. An echo-suppressed entry is not classified: it was not
+    /// really said in the room, so it should neither wake the user nor score a
+    /// bingo square.
+    private func classify(_ entry: MeetingTranscriptEntry) {
+        meetingClassifier?.classify(entry)
     }
 
     // MARK: - Audio Level Consumption

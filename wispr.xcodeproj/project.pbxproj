@@ -10,6 +10,15 @@
 		00C1100A2F60A00100000004 /* WisprCLI in CopyFiles */ = {isa = PBXBuildFile; fileRef = 00C110012F60A00100000005 /* WisprCLI */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		00C1100F2F60A00100000003 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = 00C110122F60A00100000003 /* ArgumentParser */; };
 		0AF8E6B5B2AC76E3983230BF /* MeetingStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA7524D483751DC8BD496D3 /* MeetingStateManager.swift */; };
+		D03CF64CB203675353AA77B8 /* AppleIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D509B02490BD5CF202913DC7 /* AppleIntelligence.swift */; };
+		9FC319438F3A7FC82C9F7ED3 /* AwarenessSummarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548D242AB718F45833924694 /* AwarenessSummarizer.swift */; };
+		E84835D3247706888B7BA6D2 /* FeaturePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49CA4306FBA20DBF2860A1 /* FeaturePanel.swift */; };
+		20FDDE195FA61D8BCA575E4E /* AwarenessHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B430C483F8AF6E3FEF697E2E /* AwarenessHistoryView.swift */; };
+		92B72EDADF874AB26CDB5A81 /* LiveFeatureComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEDCF610D456E5C6DB2C6266 /* LiveFeatureComponents.swift */; };
+		9A5E182B4ED3DFCA93429967 /* BingoGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAF42F450854DAE0BA3A289 /* BingoGridView.swift */; };
+		B6E7D657C35EC18ACD2B6309 /* MeetingClassifierFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 686CBE3173B1A8DB319649BC /* MeetingClassifierFeatures.swift */; };
+		488FBB252AEEC41DAA7D8939 /* MeetingClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C946E5350A24D3AB9B21A52 /* MeetingClassifier.swift */; };
+		87736F5C2D49D6F8CF73461F /* JulClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C30BD0A8406634ED851FE21 /* JulClient.swift */; };
 		1C74D1A02FA6031B00208826 /* libWisprCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1C74D0D02FA6027300208826 /* libWisprCore.a */; };
 		1C74D1A12FA6032700208826 /* libWisprCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1C74D0D02FA6027300208826 /* libWisprCore.a */; };
 		1C74D2952FA6047B00208826 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 1C74D2942FA6047B00208826 /* FluidAudio */; };
@@ -247,6 +256,15 @@
 		D1AD12340000000000000102 /* MeetingHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingHistoryStore.swift; sourceTree = "<group>"; };
 		D1AD12340000000000000104 /* MeetingHistorySidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingHistorySidebar.swift; sourceTree = "<group>"; };
 		DAA7524D483751DC8BD496D3 /* MeetingStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingStateManager.swift; sourceTree = "<group>"; };
+		D509B02490BD5CF202913DC7 /* AppleIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligence.swift; sourceTree = "<group>"; };
+		548D242AB718F45833924694 /* AwarenessSummarizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwarenessSummarizer.swift; sourceTree = "<group>"; };
+		EA49CA4306FBA20DBF2860A1 /* FeaturePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeaturePanel.swift; sourceTree = "<group>"; };
+		B430C483F8AF6E3FEF697E2E /* AwarenessHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwarenessHistoryView.swift; sourceTree = "<group>"; };
+		EEDCF610D456E5C6DB2C6266 /* LiveFeatureComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFeatureComponents.swift; sourceTree = "<group>"; };
+		4AAF42F450854DAE0BA3A289 /* BingoGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingoGridView.swift; sourceTree = "<group>"; };
+		686CBE3173B1A8DB319649BC /* MeetingClassifierFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingClassifierFeatures.swift; sourceTree = "<group>"; };
+		3C946E5350A24D3AB9B21A52 /* MeetingClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingClassifier.swift; sourceTree = "<group>"; };
+		5C30BD0A8406634ED851FE21 /* JulClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JulClient.swift; sourceTree = "<group>"; };
 		F66665AA7D70423B4954925F /* MeetingTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingTranscriptView.swift; sourceTree = "<group>"; };
 		F6CE95739BEEBDC90BA22323 /* MeetingTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingTranscript.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -447,6 +465,11 @@
 				AA2F000000000000000000F2 /* MeetingDetectionService.swift */,
 				AA3F000000000000000000F3 /* MeetingNotificationService.swift */,
 				DAA7524D483751DC8BD496D3 /* MeetingStateManager.swift */,
+				D509B02490BD5CF202913DC7 /* AppleIntelligence.swift */,
+				548D242AB718F45833924694 /* AwarenessSummarizer.swift */,
+				686CBE3173B1A8DB319649BC /* MeetingClassifierFeatures.swift */,
+				3C946E5350A24D3AB9B21A52 /* MeetingClassifier.swift */,
+				5C30BD0A8406634ED851FE21 /* JulClient.swift */,
 				1C74D2D42FA632B700208826 /* HotkeyMonitor.swift */,
 				1C74D2D52FA632B700208826 /* PermissionManager.swift */,
 				1C74D2D62FA632B700208826 /* SettingsStore.swift */,
@@ -470,6 +493,7 @@
 				1C74D2DD2FA632B700208826 /* ModelRowView.swift */,
 				1C74D2DE2FA632B700208826 /* SuffixEditorView.swift */,
 				AB00000000000000000000C2 /* VocabularyEditorView.swift */,
+				EEDCF610D456E5C6DB2C6266 /* LiveFeatureComponents.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -551,6 +575,9 @@
 			isa = PBXGroup;
 			children = (
 				F66665AA7D70423B4954925F /* MeetingTranscriptView.swift */,
+				EA49CA4306FBA20DBF2860A1 /* FeaturePanel.swift */,
+				B430C483F8AF6E3FEF697E2E /* AwarenessHistoryView.swift */,
+				4AAF42F450854DAE0BA3A289 /* BingoGridView.swift */,
 				D1AD12340000000000000104 /* MeetingHistorySidebar.swift */,
 				654DB8601B81B3E819BC5A5C /* MeetingWindowPanel.swift */,
 			);
@@ -818,6 +845,15 @@
 				AA20000000000000000000A2 /* MeetingDetectionService.swift in Sources */,
 				AA30000000000000000000A3 /* MeetingNotificationService.swift in Sources */,
 				0AF8E6B5B2AC76E3983230BF /* MeetingStateManager.swift in Sources */,
+				D03CF64CB203675353AA77B8 /* AppleIntelligence.swift in Sources */,
+				9FC319438F3A7FC82C9F7ED3 /* AwarenessSummarizer.swift in Sources */,
+				E84835D3247706888B7BA6D2 /* FeaturePanel.swift in Sources */,
+				20FDDE195FA61D8BCA575E4E /* AwarenessHistoryView.swift in Sources */,
+				92B72EDADF874AB26CDB5A81 /* LiveFeatureComponents.swift in Sources */,
+				9A5E182B4ED3DFCA93429967 /* BingoGridView.swift in Sources */,
+				B6E7D657C35EC18ACD2B6309 /* MeetingClassifierFeatures.swift in Sources */,
+				488FBB252AEEC41DAA7D8939 /* MeetingClassifier.swift in Sources */,
+				87736F5C2D49D6F8CF73461F /* JulClient.swift in Sources */,
 				EAABFC5DC0A565D10326809B /* MeetingTranscript.swift in Sources */,
 				AEAC6284FE7B470A7CB12A52 /* TranscriptDocument.swift in Sources */,
 				5871C9411CAF50B12419F9DA /* MeetingTranscriptView.swift in Sources */,

@@ -69,6 +69,16 @@ final class MenuBarController {
 
     /// Meeting state manager for meeting transcription mode.
     private let meetingStateManager: MeetingStateManager
+    /// Drives the live bingo grid shown from the menu bar.
+    private let meetingClassifier: MeetingClassifier
+
+    /// Invoked when the user picks "Open Bingo Window". Wired by the app to show
+    /// the dedicated floating bingo panel.
+    var onOpenBingoWindow: (@MainActor () -> Void)?
+
+    /// Invoked when the user picks "You were mentioned…". Shows the awareness
+    /// solicitation history window.
+    var onOpenAwarenessHistory: (@MainActor () -> Void)?
 
     /// Observation tracking for state changes.
     private var observationTask: Task<Void, Never>?
@@ -96,6 +106,10 @@ final class MenuBarController {
     let recordingMenuItem = NSMenuItem()
     private let meetingMenuItem = NSMenuItem()
     private let stopMeetingMenuItem = NSMenuItem()
+    /// Hosts the live bingo grid (a SwiftUI view) as a submenu.
+    private let bingoMenuItem = NSMenuItem()
+    /// Opens the awareness solicitation history window.
+    private let awarenessHistoryMenuItem = NSMenuItem()
     private let languageMenuItem = NSMenuItem()
     private let languageSubmenu = NSMenu()
     private let updateMenuItem = NSMenuItem()
@@ -124,7 +138,8 @@ final class MenuBarController {
         permissionManager: PermissionManager,
         textCorrectionService: TextCorrectionService,
         updateChecker: UpdateChecker,
-        meetingStateManager: MeetingStateManager
+        meetingStateManager: MeetingStateManager,
+        meetingClassifier: MeetingClassifier
     ) {
         self.stateManager = stateManager
         self.settingsStore = settingsStore
@@ -136,6 +151,7 @@ final class MenuBarController {
         self.textCorrectionService = textCorrectionService
         self.updateChecker = updateChecker
         self.meetingStateManager = meetingStateManager
+        self.meetingClassifier = meetingClassifier
 
         // Requirement 5.1: Create NSStatusItem in the menu bar
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -186,6 +202,19 @@ final class MenuBarController {
         updateMeetingMenuItem()
         menu.addItem(meetingMenuItem)
         menu.addItem(stopMeetingMenuItem)
+
+        // Bullshit Bingo — a submenu hosting the live SwiftUI grid. Always added,
+        // its visibility toggled by updateBingoMenuItem() so enabling the feature
+        // in Settings makes it appear without an app relaunch.
+        configureBingoMenuItem()
+        menu.addItem(bingoMenuItem)
+        updateBingoMenuItem()
+
+        // Awareness history — shows the moments you were addressed. Visible only
+        // when awareness has monitored names configured.
+        configureAwarenessHistoryItem()
+        menu.addItem(awarenessHistoryMenuItem)
+        updateAwarenessHistoryItem()
 
         menu.addItem(NSMenuItem.separator())
 
@@ -305,6 +334,54 @@ final class MenuBarController {
 
     /// Updates the meeting menu items to reflect whether a meeting is recording.
     ///
+    /// Builds the "Bullshit Bingo" menu item as an action that opens the dedicated
+    /// bingo window. The live grid now lives in its own floating panel rather than
+    /// a submenu, so it stays visible during a meeting.
+    private func configureBingoMenuItem() {
+        bingoMenuItem.title = "Open Bingo Window"
+        bingoMenuItem.image = NSImage(
+            systemSymbolName: "square.grid.3x3.fill",
+            accessibilityDescription: "Bullshit Bingo")
+        bingoMenuItem.action = #selector(MenuBarActionHandler.openBingoWindow(_:))
+        bingoMenuItem.target = MenuBarActionHandler.shared
+    }
+
+    /// Shows or hides the bingo item to match the setting, live. Only visible when
+    /// the feature is truly active: master on, bingo on, and JuL reachable.
+    private func updateBingoMenuItem() {
+        bingoMenuItem.isHidden = !(settingsStore.liveMeetingFeaturesEnabled
+            && settingsStore.bingoEnabled
+            && meetingClassifier.isServerReachable)
+    }
+
+    /// Opens the dedicated bingo window (wired by the app).
+    func openBingoWindow() {
+        onOpenBingoWindow?()
+    }
+
+    /// Configures the awareness-history menu item as an action.
+    private func configureAwarenessHistoryItem() {
+        awarenessHistoryMenuItem.title = "You Were Mentioned…"
+        awarenessHistoryMenuItem.image = NSImage(
+            systemSymbolName: "bell.badge",
+            accessibilityDescription: "Awareness history")
+        awarenessHistoryMenuItem.action = #selector(MenuBarActionHandler.openAwarenessHistory(_:))
+        awarenessHistoryMenuItem.target = MenuBarActionHandler.shared
+    }
+
+    /// Shows the history item only when awareness has at least one monitored name.
+    private func updateAwarenessHistoryItem() {
+        awarenessHistoryMenuItem.isHidden = !settingsStore.liveMeetingFeaturesEnabled
+            || !settingsStore.awarenessEnabled
+            || settingsStore.awarenessMonitoredNames.isEmpty
+            || !meetingClassifier.isServerReachable
+    }
+
+    /// Opens the awareness history window (wired by the app).
+    func openAwarenessHistory() {
+        onOpenAwarenessHistory?()
+    }
+
     /// A meeting keeps running with its window closed, so the menu is the only
     /// place the user can tell it is live — and the only way to stop it without
     /// reopening the window.
@@ -516,6 +593,8 @@ final class MenuBarController {
                 self.updateIcon(for: currentState)
                 self.updateRecordingMenuItem()
                 self.updateMeetingMenuItem()
+                self.updateBingoMenuItem()
+                self.updateAwarenessHistoryItem()
                 self.refreshUpdateMenuItem()
                 self.languageMenuItem.title = self.languageDisplayTitle()
                 self.buildLanguageSubmenu()
@@ -532,6 +611,14 @@ final class MenuBarController {
                         // menu reflects the live session and offers "Stop Meeting".
                         _ = self.meetingStateManager.meetingState
                         _ = self.meetingStateManager.elapsedTime
+                        // Show/hide the live bingo grid item as the setting toggles.
+                        _ = self.settingsStore.bingoEnabled
+                        _ = self.settingsStore.awarenessMonitoredNames
+                        _ = self.settingsStore.liveMeetingFeaturesEnabled
+                        _ = self.settingsStore.awarenessEnabled
+                        // JuL reachability gates the two window items, so the menu
+                        // must refresh when the health poll flips it.
+                        _ = self.meetingClassifier.isServerReachable
                     } onChange: {
                         continuation.resume()
                     }
@@ -791,6 +878,16 @@ final class MenuBarActionHandler: NSObject {
     @MainActor
     @objc func stopMeeting(_ sender: NSMenuItem) {
         menuBarController?.stopMeeting()
+    }
+
+    @MainActor
+    @objc func openBingoWindow(_ sender: NSMenuItem) {
+        menuBarController?.openBingoWindow()
+    }
+
+    @MainActor
+    @objc func openAwarenessHistory(_ sender: NSMenuItem) {
+        menuBarController?.openAwarenessHistory()
     }
 
     @MainActor

@@ -116,6 +116,107 @@ final class SettingsStore {
         }
     }
 
+    // MARK: - Live-meeting classifier (JuL) Settings
+
+    /// Master switch for the whole Live Meeting Features section (awareness +
+    /// bingo, powered by JuL). Opt-in: off by default, so nothing runs and no
+    /// server is contacted until the user turns it on.
+    var liveMeetingFeaturesEnabled: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(liveMeetingFeaturesEnabled, forKey: Keys.liveMeetingFeaturesEnabled)
+        }
+    }
+
+    /// Whether the awareness feature ("wake me when I'm addressed") is on. On by
+    /// default once Live Meeting Features are enabled, but the user can opt out.
+    var awarenessEnabled: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(awarenessEnabled, forKey: Keys.awarenessEnabled)
+        }
+    }
+
+    /// Names the awareness feature listens for ("someone is talking about you").
+    /// When non-empty and a meeting is running, each sentence is checked against
+    /// these names and the user is woken when one is addressed a question or task.
+    /// Empty (the default) disables the feature.
+    var awarenessMonitoredNames: [String] {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(awarenessMonitoredNames, forKey: Keys.awarenessMonitoredNames)
+        }
+    }
+
+    /// When true, the live bullshit-bingo grid is filled during meetings. Off by
+    /// default: it is a novelty, not a default behaviour.
+    var bingoEnabled: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(bingoEnabled, forKey: Keys.bingoEnabled)
+        }
+    }
+
+    /// The jargon terms shown on the bingo grid, editable by the user. A perfect
+    /// square count (e.g. 16) makes the nicest grid, but any count renders.
+    var bingoTerms: [String] {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(bingoTerms, forKey: Keys.bingoTerms)
+        }
+    }
+
+    /// Base URL of the local JuL server that powers the live features. Editable so
+    /// a user can point Wispr at a JuL running on another port or host.
+    var julEndpoint: String {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(julEndpoint, forKey: Keys.julEndpoint)
+        }
+    }
+
+    /// Optional API key sent as `x-api-key` to the JuL server. Empty means no
+    /// authentication (fine for the default localhost server).
+    var julApiKey: String {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(julApiKey, forKey: Keys.julApiKey)
+        }
+    }
+
+    /// How the awareness feature shows context on a wake. Defaults to showing the
+    /// last few transcript lines (no model). Generative summary is opt-in.
+    var awarenessSummaryMode: AwarenessSummaryMode {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(awarenessSummaryMode.rawValue, forKey: Keys.awarenessSummaryMode)
+        }
+    }
+
+    /// Number of recent transcript lines shown when the mode is `.lastMessages`.
+    var awarenessLastMessages: Int {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(awarenessLastMessages, forKey: Keys.awarenessLastMessages)
+        }
+    }
+
+    /// Context window in minutes fed to the generative summary (mode `.generative`).
+    var awarenessSummaryMinutes: Int {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(awarenessSummaryMinutes, forKey: Keys.awarenessSummaryMinutes)
+        }
+    }
+
+    /// Minimum seconds between two awareness wakes (anti-spam).
+    var awarenessCooldownSeconds: Int {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(awarenessCooldownSeconds, forKey: Keys.awarenessCooldownSeconds)
+        }
+    }
+
     /// Remembers the last meeting capture mode chosen in the meeting window's
     /// header toggle. `true` means the next meeting defaults to in-person
     /// (mic-only, diarized, no privileged "You"). Defaults to false (online).
@@ -253,6 +354,17 @@ final class SettingsStore {
         static let handsFreeMode = "handsFreeMode"
         static let meetingDiarizationEnabled = "meetingDiarizationEnabled"
         static let meetingEchoSuppressionEnabled = "meetingEchoSuppressionEnabled"
+        static let liveMeetingFeaturesEnabled = "liveMeetingFeaturesEnabled"
+        static let awarenessEnabled = "awarenessEnabled"
+        static let awarenessMonitoredNames = "awarenessMonitoredNames"
+        static let bingoEnabled = "bingoEnabled"
+        static let bingoTerms = "bingoTerms"
+        static let julEndpoint = "julEndpoint"
+        static let julApiKey = "julApiKey"
+        static let awarenessSummaryMode = "awarenessSummaryMode"
+        static let awarenessLastMessages = "awarenessLastMessages"
+        static let awarenessSummaryMinutes = "awarenessSummaryMinutes"
+        static let awarenessCooldownSeconds = "awarenessCooldownSeconds"
         static let meetingInPersonMode = "meetingInPersonMode"
         static let soundFeedbackEnabled = "soundFeedbackEnabled"
         static let meetingDetectionEnabled = "meetingDetectionEnabled"
@@ -284,6 +396,17 @@ final class SettingsStore {
         static let handsFreeMode: Bool = false
         static let meetingDiarizationEnabled: Bool = false
         static let meetingEchoSuppressionEnabled: Bool = true
+        static let liveMeetingFeaturesEnabled: Bool = false
+        static let awarenessEnabled: Bool = true
+        static let awarenessMonitoredNames: [String] = []
+        static let bingoEnabled: Bool = false
+        static let bingoTerms: [String] = BingoConfig.defaultTerms
+        static let julEndpoint: String = JulClient.defaultBaseURL
+        static let julApiKey: String = ""
+        static let awarenessSummaryMode: AwarenessSummaryMode = .lastMessages
+        static let awarenessLastMessages: Int = 3
+        static let awarenessSummaryMinutes: Int = 5
+        static let awarenessCooldownSeconds: Int = 45
         static let meetingInPersonMode: Bool = false
         static let soundFeedbackEnabled: Bool = false
         static let meetingDetectionEnabled: Bool = false
@@ -319,6 +442,17 @@ final class SettingsStore {
         self.handsFreeMode = Defaults.handsFreeMode
         self.meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
         self.meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
+        self.liveMeetingFeaturesEnabled = Defaults.liveMeetingFeaturesEnabled
+        self.awarenessEnabled = Defaults.awarenessEnabled
+        self.awarenessMonitoredNames = Defaults.awarenessMonitoredNames
+        self.bingoEnabled = Defaults.bingoEnabled
+        self.bingoTerms = Defaults.bingoTerms
+        self.julEndpoint = Defaults.julEndpoint
+        self.julApiKey = Defaults.julApiKey
+        self.awarenessSummaryMode = Defaults.awarenessSummaryMode
+        self.awarenessLastMessages = Defaults.awarenessLastMessages
+        self.awarenessSummaryMinutes = Defaults.awarenessSummaryMinutes
+        self.awarenessCooldownSeconds = Defaults.awarenessCooldownSeconds
         self.meetingInPersonMode = Defaults.meetingInPersonMode
         self.soundFeedbackEnabled = Defaults.soundFeedbackEnabled
         self.meetingDetectionEnabled = Defaults.meetingDetectionEnabled
@@ -352,6 +486,17 @@ final class SettingsStore {
         handsFreeMode = Defaults.handsFreeMode
         meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
         meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
+        liveMeetingFeaturesEnabled = Defaults.liveMeetingFeaturesEnabled
+        awarenessEnabled = Defaults.awarenessEnabled
+        awarenessMonitoredNames = Defaults.awarenessMonitoredNames
+        bingoEnabled = Defaults.bingoEnabled
+        bingoTerms = Defaults.bingoTerms
+        julEndpoint = Defaults.julEndpoint
+        julApiKey = Defaults.julApiKey
+        awarenessSummaryMode = Defaults.awarenessSummaryMode
+        awarenessLastMessages = Defaults.awarenessLastMessages
+        awarenessSummaryMinutes = Defaults.awarenessSummaryMinutes
+        awarenessCooldownSeconds = Defaults.awarenessCooldownSeconds
         meetingInPersonMode = Defaults.meetingInPersonMode
         soundFeedbackEnabled = Defaults.soundFeedbackEnabled
         meetingDetectionEnabled = Defaults.meetingDetectionEnabled
@@ -387,6 +532,17 @@ final class SettingsStore {
         defaults.set(handsFreeMode, forKey: Keys.handsFreeMode)
         defaults.set(meetingDiarizationEnabled, forKey: Keys.meetingDiarizationEnabled)
         defaults.set(meetingEchoSuppressionEnabled, forKey: Keys.meetingEchoSuppressionEnabled)
+        defaults.set(liveMeetingFeaturesEnabled, forKey: Keys.liveMeetingFeaturesEnabled)
+        defaults.set(awarenessEnabled, forKey: Keys.awarenessEnabled)
+        defaults.set(awarenessMonitoredNames, forKey: Keys.awarenessMonitoredNames)
+        defaults.set(bingoEnabled, forKey: Keys.bingoEnabled)
+        defaults.set(bingoTerms, forKey: Keys.bingoTerms)
+        defaults.set(julEndpoint, forKey: Keys.julEndpoint)
+        defaults.set(julApiKey, forKey: Keys.julApiKey)
+        defaults.set(awarenessSummaryMode.rawValue, forKey: Keys.awarenessSummaryMode)
+        defaults.set(awarenessLastMessages, forKey: Keys.awarenessLastMessages)
+        defaults.set(awarenessSummaryMinutes, forKey: Keys.awarenessSummaryMinutes)
+        defaults.set(awarenessCooldownSeconds, forKey: Keys.awarenessCooldownSeconds)
         defaults.set(meetingInPersonMode, forKey: Keys.meetingInPersonMode)
         defaults.set(soundFeedbackEnabled, forKey: Keys.soundFeedbackEnabled)
         defaults.set(meetingDetectionEnabled, forKey: Keys.meetingDetectionEnabled)
@@ -468,6 +624,48 @@ final class SettingsStore {
         if defaults.object(forKey: Keys.meetingEchoSuppressionEnabled) != nil {
             self.meetingEchoSuppressionEnabled = defaults.bool(
                 forKey: Keys.meetingEchoSuppressionEnabled)
+        }
+
+        if defaults.object(forKey: Keys.liveMeetingFeaturesEnabled) != nil {
+            self.liveMeetingFeaturesEnabled = defaults.bool(forKey: Keys.liveMeetingFeaturesEnabled)
+        }
+
+        if defaults.object(forKey: Keys.awarenessEnabled) != nil {
+            self.awarenessEnabled = defaults.bool(forKey: Keys.awarenessEnabled)
+        }
+
+        if let names = defaults.stringArray(forKey: Keys.awarenessMonitoredNames) {
+            self.awarenessMonitoredNames = names
+        }
+
+        if defaults.object(forKey: Keys.bingoEnabled) != nil {
+            self.bingoEnabled = defaults.bool(forKey: Keys.bingoEnabled)
+        }
+
+        if let terms = defaults.stringArray(forKey: Keys.bingoTerms) {
+            self.bingoTerms = terms
+        }
+
+        if let endpoint = defaults.string(forKey: Keys.julEndpoint), !endpoint.isEmpty {
+            self.julEndpoint = endpoint
+        }
+
+        if let key = defaults.string(forKey: Keys.julApiKey) {
+            self.julApiKey = key
+        }
+
+        if let raw = defaults.string(forKey: Keys.awarenessSummaryMode),
+           let mode = AwarenessSummaryMode(rawValue: raw) {
+            self.awarenessSummaryMode = mode
+        }
+        if defaults.object(forKey: Keys.awarenessLastMessages) != nil {
+            self.awarenessLastMessages = defaults.integer(forKey: Keys.awarenessLastMessages)
+        }
+        if defaults.object(forKey: Keys.awarenessSummaryMinutes) != nil {
+            self.awarenessSummaryMinutes = defaults.integer(forKey: Keys.awarenessSummaryMinutes)
+        }
+        if defaults.object(forKey: Keys.awarenessCooldownSeconds) != nil {
+            self.awarenessCooldownSeconds = defaults.integer(forKey: Keys.awarenessCooldownSeconds)
         }
 
         if defaults.object(forKey: Keys.meetingInPersonMode) != nil {

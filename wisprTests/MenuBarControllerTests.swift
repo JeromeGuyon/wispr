@@ -61,7 +61,8 @@ private func createTestController(
         permissionManager: permissionManager,
         textCorrectionService: TextCorrectionService(),
         updateChecker: updateChecker,
-        meetingStateManager: meetingStateManager
+        meetingStateManager: meetingStateManager,
+        meetingClassifier: MeetingClassifier()
     )
 
     return (controller, stateManager, settingsStore, themeEngine)
